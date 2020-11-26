@@ -7,7 +7,7 @@ import pickle
 import fnmatch
 import json
 import string
-
+import utils
 from collections import Counter
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
@@ -19,9 +19,11 @@ from drlstm.utils import correct_predictions
 
 from torch.utils.data import DataLoader
 from drlstm.data import NLIDataset
-from drlstm.model import DRLSTM
-
+from drlstm.true_model import DRLSTM
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 
 """
 Utility functions for training and validating models.
@@ -32,8 +34,6 @@ def train(model,
           criterion,
           epoch_number,
           max_gradient_norm):
-
-    # Switch the model to train mode.
     model.train()
     device = model.device
 
@@ -45,8 +45,6 @@ def train(model,
     tqdm_batch_iterator = tqdm(dataloader)
     for batch_index, batch in enumerate(tqdm_batch_iterator):
         batch_start = time.time()
-
-        # Move input and output data to the GPU if it is used.
         premises = batch["premise"].to(device)
         premises_lengths = batch["premise_length"].to(device)
         hypotheses = batch["hypothesis"].to(device)
@@ -82,7 +80,6 @@ def train(model,
 
 
 def validate(model, dataloader, criterion):
-    # Switch to evaluate mode.
     model.eval()
     device = model.device
 
@@ -121,7 +118,7 @@ Train the model on the preprocessed SNLI dataset.
 # Aurelien Coet, 2018.
 
 
-
+# change: logger = None
 def main(train_file,
          valid_file,
          embeddings_file,
@@ -134,7 +131,8 @@ def main(train_file,
          lr=0.0004,
          patience=5,
          max_grad_norm=10.0,
-         checkpoint=None):
+         checkpoint=None,
+         logger = None):
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -227,6 +225,9 @@ def main(train_file,
                                                        max_grad_norm)
 
         train_losses.append(epoch_loss)
+        # change: logger
+        logger.debug("Training epoch: {}, time: {:.4f}s, loss = {:.4f}, accuracy: {:.4f}%"
+              .format(epoch, epoch_time, epoch_loss, (epoch_accuracy*100)))
         print("-> Training time: {:.4f}s, loss = {:.4f}, accuracy: {:.4f}%"
               .format(epoch_time, epoch_loss, (epoch_accuracy*100)))
 
@@ -236,6 +237,8 @@ def main(train_file,
                                                           criterion)
 
         valid_losses.append(epoch_loss)
+        logger.debug("Validing epoch: {}, time: {:.4f}s, loss: {:.4f}, accuracy: {:.4f}%\n"
+              .format(epoch, epoch_time, epoch_loss, (epoch_accuracy*100)))
         print("-> Valid. time: {:.4f}s, loss: {:.4f}, accuracy: {:.4f}%\n"
               .format(epoch_time, epoch_loss, (epoch_accuracy*100)))
 
@@ -261,32 +264,35 @@ def main(train_file,
                        os.path.join(target_dir, "best.pth.tar"))
 
         # Save the model at each epoch.
-        print ('Saving model to')
-        print (os.path.join(target_dir, "drlstm_{}.pth.tar".format(epoch)))
-        torch.save({"epoch": epoch,
-                    "model": model.state_dict(),
-                    "best_score": best_score,
-                    "optimizer": optimizer.state_dict(),
-                    "epochs_count": epochs_count,
-                    "train_losses": train_losses,
-                    "valid_losses": valid_losses},
-                   os.path.join(target_dir, "drlstm_{}.pth.tar".format(epoch)))
+        # print ('Saving model to')
+        # print (os.path.join(target_dir, "drlstm_{}.pth.tar".format(epoch)))
+        # torch.save({"epoch": epoch,
+        #             "model": model.state_dict(),
+        #             "best_score": best_score,
+        #             "optimizer": optimizer.state_dict(),
+        #             "epochs_count": epochs_count,
+        #             "train_losses": train_losses,
+        #             "valid_losses": valid_losses},
+        #            os.path.join(target_dir, "drlstm_{}.pth.tar".format(epoch)))
 
         if patience_counter >= patience:
             print("-> Early stopping: patience limit reached, stopping...")
             break
 
     # Plotting of the loss curves for the train and validation sets.
-    plt.figure()
+    # plt.figure()
     plt.plot(epochs_count, train_losses, "-r")
     plt.plot(epochs_count, valid_losses, "-b")
     plt.xlabel("epoch")
     plt.ylabel("loss")
     plt.legend(["Training loss", "Validation loss"])
     plt.title("Cross entropy loss")
-    plt.show()
+    plt.savefig("result/{}.jpg".format(epochs))
+    # change
+    # plt.show()
 
 if __name__ == '__main__':
+
     default_config = "snli_training.json"
 
     script_dir = './'
@@ -300,7 +306,9 @@ if __name__ == '__main__':
 
     with open(os.path.normpath(config_path), 'r') as config_file:
         config = json.load(config_file)
-
+    # change: snli_training.json
+    # change: logger
+    logger = utils.setup_logger(__name__, os.path.join(config["checkpoint_dir"], 'train.log'))
     main(os.path.normpath(os.path.join(script_dir, config["train_data"])),
           os.path.normpath(os.path.join(script_dir, config["valid_data"])),
           os.path.normpath(os.path.join(script_dir, config["embeddings"])),
@@ -313,4 +321,5 @@ if __name__ == '__main__':
           config["lr"],
           config["patience"],
           config["max_gradient_norm"],
-          checkpoint)
+          checkpoint,
+          logger)

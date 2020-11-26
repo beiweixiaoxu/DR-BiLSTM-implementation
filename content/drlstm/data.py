@@ -330,6 +330,7 @@ class NLIDataset(Dataset):
                 accepted for the sequences in the premises. If set to None,
                 the length of the longest premise in 'data' is used.
                 Defaults to None.
+                Defaults to None.
             max_hypothesis_length: An integer indicating the maximum length
                 accepted for the sequences in the hypotheses. If set to None,
                 the length of the longest hypothesis in 'data' is used.
@@ -360,7 +361,6 @@ class NLIDataset(Dataset):
             self.data["ids"].append(data["ids"][i])
             end = min(len(premise), self.max_premise_length)
             self.data["premises"][i][:end] = torch.tensor(premise[:end])
-
             hypothesis = data["hypotheses"][i]
             end = min(len(hypothesis), self.max_hypothesis_length)
             self.data["hypotheses"][i][:end] = torch.tensor(hypothesis[:end])

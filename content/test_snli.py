@@ -102,6 +102,7 @@ def test(model, dataloader):
             hypotheses_lengths = batch["hypothesis_length"].to(device)
             labels = batch["label"].to(device)
 
+
             _, probs = model(premises,
                              premises_lengths,
                              hypotheses,
@@ -242,9 +243,9 @@ def main_test(test_file, pretrained_file, batch_size=32):
         batch_size: The size of the batches used for testing. Defaults to 32.
     """
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
+    print("device:",device)
     print(20 * "=", " Preparing for testing ", 20 * "=")
-
+    print(pretrained_file)
     checkpoint = torch.load(pretrained_file, map_location=torch.device(device))
 
     # Retrieving model parameters from checkpoint.
@@ -252,8 +253,12 @@ def main_test(test_file, pretrained_file, batch_size=32):
     embedding_dim = checkpoint["model"]['_word_embedding.weight'].size(1)
     hidden_size = checkpoint["model"]["_projection.0.weight"].size(0)
     num_classes = checkpoint["model"]["_classification.4.weight"].size(0)
-
+    print("vacab_size:",vocab_size)
+    print("embedding_dim:",embedding_dim)
+    print("hidden_size:",hidden_size)
+    print("num_classes:",num_classes)
     print("\t* Loading test data...")
+
     with open(test_file, "rb") as pkl:
         test_data = NLIDataset(pickle.load(pkl))
 
@@ -278,9 +283,11 @@ def main_test(test_file, pretrained_file, batch_size=32):
 
 
 if __name__ == '__main__':
-    test_data = 'test_data.pkl'
+    # change
+    # test_data = 'test_data.pkl' 
+    test_data = 'mydata/test_data.pkl'
     checkpoint = 'best.pth.tar'
-    batch_size = 32
+    batch_size = 64
     print ('First 5 test sentences:')
     sentences = ['This church choir sings to the masses as they sing joyous songs from the book at a church.    The church has cracks in the ceiling.',
                 'This church choir sings to the masses as they sing joyous songs from the book at a church. The church is filled with song.',

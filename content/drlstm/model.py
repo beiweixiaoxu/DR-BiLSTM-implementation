@@ -15,7 +15,7 @@ import string
 from collections import Counter
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-
+import torchsnooper
 import time
 from tqdm import tqdm
 from drlstm.utils import correct_predictions
@@ -42,24 +42,19 @@ class DRLSTM(nn.Module):
 
         super(DRLSTM, self).__init__()
 
-        self.vocab_size = vocab_size
-        self.embedding_dim = embedding_dim
-        self.hidden_size = hidden_size
-        self.num_classes = num_classes
+        self.vocab_size = vocab_size  # 42394
+        self.embedding_dim = embedding_dim # 300
+        self.hidden_size = hidden_size # 450
+        self.num_classes = num_classes # 3
         self.dropout = dropout
         self.device = device
-
-        self.debug = False
 
         self._word_embedding = nn.Embedding(self.vocab_size,
                                             self.embedding_dim,
                                             padding_idx=padding_idx,
                                             _weight=embeddings)
-        #print ('embedding_dim: ')
-        #print (embedding_dim)
         if self.dropout:
             self._rnn_dropout = RNNDropout(p=self.dropout)
-            # self._rnn_dropout = nn.Dropout(p=self.dropout)
 
         self._encoding = Seq2SeqEncoder(nn.LSTM,
                                         self.embedding_dim,
@@ -107,13 +102,15 @@ class DRLSTM(nn.Module):
         # Initialize all weights and biases in the model.
         self.apply(_init_model_weights)
 
+    @torchsnooper.snoop()
     def forward(self,
                 premises,
                 premises_lengths,
                 hypotheses,
                 hypotheses_lengths):
-
-        premises_mask = get_mask(premises, premises_lengths).to(self.device)
+        print("="*100)
+        premises_mask = get_mask(premises, premises_lengths).to(self.device) # 原来输入是一个batch_size*max_length的tensor, premise_mask是一个batch_size*max_length2!!的tensor
+                                                                            # padding位置为0，这里的max_length2=max(premises_lengths)!
         hypotheses_mask = get_mask(hypotheses, hypotheses_lengths)\
             .to(self.device)
 
@@ -123,17 +120,6 @@ class DRLSTM(nn.Module):
         if self.debug:
           print (embedded_premises.size()) # 32,61,300
           print (embedded_hypotheses.size()) # 32,57,300
-        #if self.dropout:
-        #    embedded_premises = self._rnn_dropout(embedded_premises)
-        #    embedded_hypotheses = self._rnn_dropout(embedded_hypotheses)
-
-
-        
-        encoded_premises = self._encoding(embedded_premises,
-                                          premises_lengths)
-        encoded_hypotheses = self._encoding(embedded_hypotheses,
-                                            hypotheses_lengths)
-        
         
         encoded_premises1 = self._encoding1(embedded_premises,
                                           premises_lengths)
@@ -156,23 +142,6 @@ class DRLSTM(nn.Module):
           print (encoded_premises2.size())
           print ('encoded_hypo2')
           print (encoded_hypotheses2.size())
-        
-        """
-        encoded_premises1
-        torch.Size([32, 36, 300])
-        encoded_hypo1
-        torch.Size([32, 22, 300])
-        encoded_premises2
-        torch.Size([32, 22, 600])
-        encoded_hypo2
-        torch.Size([32, 36, 600])
-        #print (premises_lengths.size()) # 32
-        #print (hypotheses_lengths.size()) # 32
-        
-        #print (encoded_premises.size()) # 32,36,600
-        #print (encoded_hypotheses.size()) # 32,22,600
-
-        """
 
         attended_premises, attended_hypotheses =\
             self._attention(encoded_premises2, hypotheses_mask,
@@ -204,8 +173,8 @@ class DRLSTM(nn.Module):
           print ('enhanced_hypotheses: ')
           print (enhanced_hypotheses.size())
         
-        projected_premises = self._projection(enhanced_premises)
-        projected_hypotheses = self._projection(enhanced_hypotheses)
+        projected_premises = self._projection(enhanced_premises) # b,seq1,hidden
+        projected_hypotheses = self._projection(enhanced_hypotheses) # # b,seq2,hidden
         
         if self.debug:
           print ('projected_premises:')
@@ -231,8 +200,8 @@ class DRLSTM(nn.Module):
         print (v_bj.size())
         """
 
-        v_ai1 = self._composition1(projected_premises, hypotheses_lengths)
-        v_bj1 = self._composition1(projected_hypotheses, premises_lengths)
+        v_ai1 = self._composition1(projected_premises, hypotheses_lengths) # b, s1, 2dim
+        v_bj1 = self._composition1(projected_hypotheses, premises_lengths) # b, s2 , 2dim
 
         if self.debug:
           print ('v_ai1')
@@ -240,8 +209,8 @@ class DRLSTM(nn.Module):
           print ('v_bj1')
           print (v_bj1.size())
 
-        v_ai2 = self._composition2(v_ai1, hypotheses_lengths)
-        v_bj2 = self._composition2(v_bj1, premises_lengths)
+        v_ai2 = self._composition2(v_ai1, hypotheses_lengths) # b, s1, 2dim
+        v_bj2 = self._composition2(v_bj1, premises_lengths)  # b, s2, 2dim
 
         if self.debug:
           print ('v_ai2')
@@ -251,15 +220,15 @@ class DRLSTM(nn.Module):
 
         
         # max pooling
-        v_ai = torch.max(v_ai1, v_ai2)
-        v_bj = torch.max(v_bj1, v_bj2)
+        # 这个可以做得更好
+        v_ai = torch.max(v_ai1, v_ai2)  # b, s1, 2dim
+        v_bj = torch.max(v_bj1, v_bj2) # b, s2, 2dim
 
         if self.debug:
           print ('v_ai after max')
           print (v_ai.size())
           print ('v_bj after max')
           print (v_bj.size())
-
         v_a_avg = torch.sum(v_bj * premises_mask.unsqueeze(1)
                                                 .transpose(2, 1), dim=1)\
             / torch.sum(premises_mask, dim=1, keepdim=True)
