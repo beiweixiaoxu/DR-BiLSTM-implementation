@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from drlstm.true_utils import *
+from drlstm.span_rep import *
 class BilstmEncoder(nn.Module):
     def __init__(self,
                  rnn_type,
@@ -46,7 +47,6 @@ class BilstmEncoder(nn.Module):
         reordered_cell_state = cell_state.index_select(1, restoration_idx)
         return reordered_outputs, (reordered_hidden_state,reordered_cell_state)
 
-
 class SoftmaxAttention(nn.Module):
     def forward(self,
                 premise_batch,
@@ -66,17 +66,58 @@ class SoftmaxAttention(nn.Module):
                                            hypothesis_mask)
         return attended_premises, attended_hypotheses
 
+
+class attention_pooling(nn.Module):
+    
+    def __init__(self, hidden_size):
+        super(attention_pooling, self).__init__()
+
+        self.word_weight_layer = nn.Linear(hidden_size, 1)
+
+    def forward(self, tensor, mask):
+        weight = self.word_weight_layer(tensor).squeeze(-1)  # 句子数*单词数
+
+        weight *= mask
+
+        softmaxed_weight = nn.functional.softmax(weight, dim=-1)  # 句子数*单词数
+
+        softmaxed_weight = softmaxed_weight / (softmaxed_weight.sum(dim=-1, keepdim=True) + 1e-13)
+
+        softmaxed_weight = softmaxed_weight.unsqueeze(1)
+
+        atts = softmaxed_weight.matmul(tensor).squeeze(1)
+
+        return atts
+
+
+
 class WordSentencePooling(nn.Module):
-    def forward(self,tensor1, tensor2):
-        # tensor1: batch_size, sen_num, dim
-        # tensor2: batch_size, sen_num, dim
-        infered_tensor = torch.max(tensor1, tensor2) # batch_size, sen_num, dim
+    
+    def __init__(self, hidden_size, pooling_method1="max",pooling_method2="avg"):
+        super(WordSentencePooling, self).__init__()
+        self.hidden_size = hidden_size
+        self.pooling1 = get_pooling_module(hidden_size,pooling_method1)
+        self.pooling2 = get_pooling_module(hidden_size,pooling_method2)
+        # self.attn_pooling = attention_pooling(self.hidden_size)
 
-        max_infered_tensor,_ = torch.max(infered_tensor, dim = 1) # _ is index
+    def forward(self,tensor1, tensor2, start_ids, end_ids):
+        
+        infered_tensor = torch.max(tensor1, tensor2) # batch_size, sen_len, dim
+        pooled_infered_tensor1 = self.pooling1(tensor1, start_ids, end_ids)
+        pooled_infered_tensor2 = self.pooling2(tensor2, start_ids, end_ids)
+        # max_infered_tensor,_ = torch.max(infered_tensor, dim = 1) # _ is index
+        #
+        # avg_infered_tensor = torch.mean(infered_tensor, dim = 1)
+        #
+        #
+        # # change3: add attention_pooling
+        # # attn_infered_tensor = self.attn_pooling(infered_tensor, mask)
 
-        avg_infered_tensor = torch.mean(infered_tensor, dim = 1)
-
-        pooled_tensor = torch.cat([max_infered_tensor, avg_infered_tensor], dim=-1)
+        # pooled_tensor = torch.cat([max_infered_tensor, avg_infered_tensor], dim=-1)
+        pooled_tensor = torch.cat([pooled_infered_tensor1, pooled_infered_tensor2], dim=-1)
 
         return pooled_tensor
-
+        # change4: just use attention pooling
+        # return attn_infered_tensor
+    def get_output_dim(self):
+        return self.pooling1.get_output_dim() + self.pooling2.get_output_dim()

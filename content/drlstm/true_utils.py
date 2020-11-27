@@ -20,6 +20,9 @@ def masked_softmax(tensor, mask):
     return result.view(*tensor_shape)
 
 def weighted_sum(tensor, weights, mask):
+    # tensor
+    # weights: batch_size, sen1, sen2    batch_size,1, sen1        batch_size,sen1, dim
+    # tensor: batch_size, sen2, dim
     weighted_sum = weights.bmm(tensor)
     while mask.dim() < weighted_sum.dim():
         mask = mask.unsqueeze(1)
@@ -29,19 +32,34 @@ def weighted_sum(tensor, weights, mask):
 
 
 def sort_by_seq_lens(batch, sequences_lengths, descending=True):
-    # 按照每个句子的长度进行排序，假如 sequences_lengths=[10, 2, 8, 20]
-    # sorted_seq_lens = [2, 8, 10 ,20]; sorting_index = [1, 2, 0, 3]
     sorted_seq_lens, sorting_index =\
         sequences_lengths.sort(0, descending=descending)
-
-    # 根据sorting_index对句子进行重排序
     sorted_batch = batch.index_select(0, sorting_index)
-    idx_range =\
-        sequences_lengths.new_tensor(torch.arange(0, len(sequences_lengths)))
-    # reverse_mapping = [2, 0, 1, 3]
+    idx_range = torch.arange(0, len(sequences_lengths)).cuda()
     _, reverse_mapping = sorting_index.sort(0, descending=False)
-    # print("reverse_mapping:", reverse_mapping)
-    # restoration_index = [2, 0, 1, 3]  真不知道这个到底有什么意义
     restoration_index = idx_range.index_select(0, reverse_mapping)
-    # print("restoration_index:", restoration_index)
     return sorted_batch, sorted_seq_lens, sorting_index, restoration_index
+
+
+def check_pool_out_dim(pool_out_dim,hidden_size,methods):
+    dim_lst = [method_to_dim(hidden_size, method) for method in methods]
+    assert pool_out_dim == sum(dim_lst)
+
+
+def method_to_dim(hidden_size,method):
+    if method == "max":
+        return hidden_size
+    elif method == "attn":
+        return hidden_size
+    elif method == "avg":
+        return hidden_size
+    elif method == "diff":
+        return hidden_size
+    elif method == "diffsum":
+        return 2*hidden_size
+    elif method == "endpoint":
+        return 2*hidden_size
+    elif method == "coherent":
+        return hidden_size // 2 + 1
+    elif method == "coref":
+        return 3*hidden_size
